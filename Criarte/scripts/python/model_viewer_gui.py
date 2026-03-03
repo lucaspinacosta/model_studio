@@ -73,6 +73,51 @@ VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".wmv", ".m4v"}
 TRAINABLE_MODEL_SUFFIXES = {".pt", ".yaml", ".yml"}
 
 
+class FloatingTrainingPlotWindow(QWidget):
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.setWindowTitle(title)
+        self.resize(980, 560)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+
+        layout = QVBoxLayout(self)
+        if HAS_MATPLOTLIB:
+            self.figure = Figure(figsize=(8, 4), tight_layout=True)
+            self.canvas = FigureCanvas(self.figure)
+            self.loss_ax = self.figure.add_subplot(1, 2, 1)
+            self.metric_ax = self.figure.add_subplot(1, 2, 2)
+            layout.addWidget(self.canvas, 1)
+            self.clear_plot()
+        else:
+            self.figure = None
+            self.canvas = None
+            self.loss_ax = None
+            self.metric_ax = None
+            layout.addWidget(QLabel("Matplotlib not available. Plot window disabled."))
+
+        close_row = QHBoxLayout()
+        close_row.addStretch(1)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        close_row.addWidget(close_btn)
+        layout.addLayout(close_row)
+
+    def clear_plot(self) -> None:
+        if not HAS_MATPLOTLIB or self.loss_ax is None or self.metric_ax is None:
+            return
+        self.loss_ax.clear()
+        self.metric_ax.clear()
+        self.loss_ax.set_title("Training Loss")
+        self.loss_ax.set_xlabel("Epoch")
+        self.loss_ax.set_ylabel("Loss")
+        self.loss_ax.grid(True, alpha=0.3)
+        self.metric_ax.set_title("Validation Metrics")
+        self.metric_ax.set_xlabel("Epoch")
+        self.metric_ax.set_ylabel("Score")
+        self.metric_ax.grid(True, alpha=0.3)
+        self.canvas.draw_idle()
+
+
 class ModelViewer(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -94,9 +139,15 @@ class ModelViewer(QMainWindow):
         self.current_qimage: QImage | None = None
         self.train_process: QProcess | None = None
         self.train_plot_timer = QTimer(self)
-        self.train_plot_timer.timeout.connect(self._update_training_plot)
+        self.train_plot_timer.timeout.connect(self._update_optimize_training_plot)
         self.train_results_csv: Path | None = None
         self.model_train_process: QProcess | None = None
+        self.model_train_plot_timer = QTimer(self)
+        self.model_train_plot_timer.timeout.connect(self._update_model_training_plot)
+        self.model_train_results_csv: Path | None = None
+        self.optimize_plot_window: FloatingTrainingPlotWindow | None = None
+        self.model_plot_window: FloatingTrainingPlotWindow | None = None
+        self.plot_windows: list[FloatingTrainingPlotWindow] = []
 
         self._build_ui()
         self._refresh_nav_buttons()
@@ -326,19 +377,7 @@ class ModelViewer(QMainWindow):
         actions.addWidget(self.stop_train_btn)
         layout.addLayout(actions)
 
-        if HAS_MATPLOTLIB:
-            self.plot_figure = Figure(figsize=(8, 4), tight_layout=True)
-            self.plot_canvas = FigureCanvas(self.plot_figure)
-            self.loss_ax = self.plot_figure.add_subplot(1, 2, 1)
-            self.metric_ax = self.plot_figure.add_subplot(1, 2, 2)
-            layout.addWidget(self.plot_canvas, 1)
-            self._clear_training_plot()
-        else:
-            self.plot_canvas = None
-            self.plot_figure = None
-            self.loss_ax = None
-            self.metric_ax = None
-            layout.addWidget(QLabel("Matplotlib not available. Real-time training plot disabled."))
+        layout.addWidget(QLabel("A floating Matplotlib window opens automatically when training starts."))
 
         self.training_log = QTextEdit()
         self.training_log.setReadOnly(True)
@@ -606,21 +645,6 @@ class ModelViewer(QMainWindow):
             self.workers_spin.setValue(0)
             self.statusBar().showMessage("Optimize preset applied: CPU Stable", 3000)
 
-    def _clear_training_plot(self) -> None:
-        if not HAS_MATPLOTLIB or self.loss_ax is None or self.metric_ax is None:
-            return
-        self.loss_ax.clear()
-        self.metric_ax.clear()
-        self.loss_ax.set_title("Training Loss")
-        self.loss_ax.set_xlabel("Epoch")
-        self.loss_ax.set_ylabel("Loss")
-        self.loss_ax.grid(True, alpha=0.3)
-        self.metric_ax.set_title("Validation Metrics")
-        self.metric_ax.set_xlabel("Epoch")
-        self.metric_ax.set_ylabel("Score")
-        self.metric_ax.grid(True, alpha=0.3)
-        self.plot_canvas.draw_idle()
-
     def _extract_results_csv_from_output(self, text: str) -> Path | None:
         for raw_line in text.splitlines():
             line = self._strip_ansi(raw_line)
@@ -632,15 +656,14 @@ class ModelViewer(QMainWindow):
                     return run_dir / "results.csv"
         return None
 
-    def _fallback_find_results_csv(self) -> Path | None:
-        project_value = self.project_edit.text().strip() or "runs/train"
+    def _fallback_find_results_csv(self, project_value: str, run_name: str) -> Path | None:
         project_dir = Path(project_value)
         if not project_dir.is_absolute():
             project_dir = self._project_root() / project_dir
         if not project_dir.exists():
             return None
 
-        run_name = (self.run_name_edit.text().strip() or "pseudo_label_train").lower()
+        run_name = run_name.lower()
         candidates = []
         for path in project_dir.rglob("results.csv"):
             parent_name = path.parent.name.lower()
@@ -653,16 +676,20 @@ class ModelViewer(QMainWindow):
         candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return candidates[0]
 
-    def _update_training_plot(self) -> None:
-        if not HAS_MATPLOTLIB or self.loss_ax is None or self.metric_ax is None:
+    def _create_plot_window(self, title: str) -> FloatingTrainingPlotWindow | None:
+        if not HAS_MATPLOTLIB:
+            return None
+        win = FloatingTrainingPlotWindow(title)
+        self.plot_windows.append(win)
+        win.show()
+        return win
+
+    def _update_plot_window(self, csv_path: Path | None, plot_window: FloatingTrainingPlotWindow | None) -> None:
+        if not HAS_MATPLOTLIB or plot_window is None:
             return
 
-        csv_path = self.train_results_csv
         if csv_path is None or not csv_path.exists():
-            csv_path = self._fallback_find_results_csv()
-            if csv_path is None or not csv_path.exists():
-                return
-            self.train_results_csv = csv_path
+            return
 
         try:
             with csv_path.open("r", encoding="utf-8", newline="") as f:
@@ -676,34 +703,45 @@ class ModelViewer(QMainWindow):
         loss_keys = ["train/box_loss", "train/cls_loss", "train/dfl_loss"]
         metric_keys = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
 
-        self.loss_ax.clear()
-        self.metric_ax.clear()
-        self.loss_ax.set_title("Training Loss")
-        self.loss_ax.set_xlabel("Epoch")
-        self.loss_ax.set_ylabel("Loss")
-        self.loss_ax.grid(True, alpha=0.3)
-        self.metric_ax.set_title("Validation Metrics")
-        self.metric_ax.set_xlabel("Epoch")
-        self.metric_ax.set_ylabel("Score")
-        self.metric_ax.grid(True, alpha=0.3)
+        plot_window.clear_plot()
+        loss_ax = plot_window.loss_ax
+        metric_ax = plot_window.metric_ax
+        if loss_ax is None or metric_ax is None:
+            return
 
         for key in loss_keys:
             if key in rows[0]:
                 values = [self._safe_float(row.get(key)) for row in rows]
                 if not all(math.isnan(v) for v in values):
-                    self.loss_ax.plot(x, values, label=key.replace("train/", ""))
-        if self.loss_ax.lines:
-            self.loss_ax.legend(loc="best", fontsize=8)
+                    loss_ax.plot(x, values, label=key.replace("train/", ""))
+        if loss_ax.lines:
+            loss_ax.legend(loc="best", fontsize=8)
 
         for key in metric_keys:
             if key in rows[0]:
                 values = [self._safe_float(row.get(key)) for row in rows]
                 if not all(math.isnan(v) for v in values):
-                    self.metric_ax.plot(x, values, label=key.replace("metrics/", ""))
-        if self.metric_ax.lines:
-            self.metric_ax.legend(loc="best", fontsize=8)
+                    metric_ax.plot(x, values, label=key.replace("metrics/", ""))
+        if metric_ax.lines:
+            metric_ax.legend(loc="best", fontsize=8)
 
-        self.plot_canvas.draw_idle()
+        plot_window.canvas.draw_idle()
+
+    def _update_optimize_training_plot(self) -> None:
+        if self.train_results_csv is None or not self.train_results_csv.exists():
+            self.train_results_csv = self._fallback_find_results_csv(
+                self.project_edit.text().strip() or "runs/train",
+                self.run_name_edit.text().strip() or "pseudo_label_train",
+            )
+        self._update_plot_window(self.train_results_csv, self.optimize_plot_window)
+
+    def _update_model_training_plot(self) -> None:
+        if self.model_train_results_csv is None or not self.model_train_results_csv.exists():
+            self.model_train_results_csv = self._fallback_find_results_csv(
+                self.obb_project_edit.text().strip() or "runs/obb",
+                self.obb_name_edit.text().strip() or "sandwich_panel_obb_gui",
+            )
+        self._update_plot_window(self.model_train_results_csv, self.model_plot_window)
 
     def start_training_pipeline(self) -> None:
         if self.train_process is not None and self.train_process.state() != QProcess.NotRunning:
@@ -787,7 +825,8 @@ class ModelViewer(QMainWindow):
         self.training_log.clear()
         self.training_log.append(f"$ {python_bin} {' '.join(args)}")
         self.train_results_csv = None
-        self._clear_training_plot()
+        run_name = self.run_name_edit.text().strip() or "pseudo_label_train"
+        self.optimize_plot_window = self._create_plot_window(f"Optimize Plot: {run_name}")
 
         self.train_process = QProcess(self)
         self.train_process.setWorkingDirectory(str(self._project_root()))
@@ -823,12 +862,12 @@ class ModelViewer(QMainWindow):
             csv_path = self._extract_results_csv_from_output(text)
             if csv_path is not None:
                 self.train_results_csv = csv_path
-            self._update_training_plot()
+            self._update_optimize_training_plot()
 
     def _on_training_finished(self, exit_code: int, exit_status: int) -> None:
         _ = exit_status
         self.train_plot_timer.stop()
-        self._update_training_plot()
+        self._update_optimize_training_plot()
         self.start_train_btn.setEnabled(True)
         self.stop_train_btn.setEnabled(False)
         if exit_code == 0:
@@ -907,6 +946,9 @@ class ModelViewer(QMainWindow):
 
         self.model_training_log.clear()
         self.model_training_log.append(f"$ {program} {' '.join(args)}")
+        self.model_train_results_csv = None
+        run_name = self.obb_name_edit.text().strip() or "sandwich_panel_obb_gui"
+        self.model_plot_window = self._create_plot_window(f"Training Plot: {run_name}")
 
         self.model_train_process = QProcess(self)
         self.model_train_process.setWorkingDirectory(str(root))
@@ -919,12 +961,14 @@ class ModelViewer(QMainWindow):
 
         self.start_model_train_btn.setEnabled(False)
         self.stop_model_train_btn.setEnabled(True)
+        self.model_train_plot_timer.start(2000)
         self.statusBar().showMessage("Model training started", 3000)
 
     def stop_model_training(self) -> None:
         if self.model_train_process is None or self.model_train_process.state() == QProcess.NotRunning:
             return
         self.model_train_process.kill()
+        self.model_train_plot_timer.stop()
         self.model_training_log.append("\n[Model training stopped]")
         self.start_model_train_btn.setEnabled(True)
         self.stop_model_train_btn.setEnabled(False)
@@ -939,9 +983,15 @@ class ModelViewer(QMainWindow):
             self.model_training_log.verticalScrollBar().setValue(
                 self.model_training_log.verticalScrollBar().maximum()
             )
+            csv_path = self._extract_results_csv_from_output(text)
+            if csv_path is not None:
+                self.model_train_results_csv = csv_path
+            self._update_model_training_plot()
 
     def _on_model_training_finished(self, exit_code: int, exit_status: int) -> None:
         _ = exit_status
+        self.model_train_plot_timer.stop()
+        self._update_model_training_plot()
         self.start_model_train_btn.setEnabled(True)
         self.stop_model_train_btn.setEnabled(False)
         if exit_code == 0:
@@ -1202,6 +1252,7 @@ class ModelViewer(QMainWindow):
         if self.model_train_process is not None and self.model_train_process.state() != QProcess.NotRunning:
             self.model_train_process.kill()
         self.train_plot_timer.stop()
+        self.model_train_plot_timer.stop()
         self._clear_video()
         super().closeEvent(event)
 

@@ -246,6 +246,35 @@ def find_best_weights(project_dir: Path, run_name: str, before: set[Path]) -> Pa
     return candidates[0]
 
 
+def find_best_weights_fallback(run_name: str, before: set[Path]) -> Path | None:
+    root = Path(__file__).resolve().parents[2]
+    search_roots = [
+        root / "runs",
+        root,
+        Path.cwd(),
+    ]
+    candidates: list[Path] = []
+    for base in search_roots:
+        if not base.exists():
+            continue
+        for p in base.rglob("best.pt"):
+            candidates.append(p)
+    if not candidates:
+        return None
+
+    run_name_l = (run_name or "").strip().lower()
+    if run_name_l:
+        filtered = [p for p in candidates if run_name_l in str(p).lower()]
+        if filtered:
+            candidates = filtered
+
+    candidates = sorted(set(candidates), key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in candidates:
+        if path not in before:
+            return path
+    return candidates[0]
+
+
 def main() -> int:
     args = parse_args()
 
@@ -386,11 +415,13 @@ def main() -> int:
         trainer.train(**train_kwargs)
     except Exception as exc:
         msg = str(exc).lower()
-        nms_backend_error = "torchvision::nms" in msg and "could not run" in msg
+        nms_backend_error = "torchvision::nms" in msg or "non_max_suppression" in msg
         if not nms_backend_error:
             raise
 
         best_after_fail = find_best_weights(project_dir, args.name, before_best)
+        if best_after_fail is None:
+            best_after_fail = find_best_weights_fallback(args.name, before_best)
         if best_after_fail is None:
             raise
         print(
@@ -400,6 +431,8 @@ def main() -> int:
 
     if args.export_onnx_name:
         best_pt = find_best_weights(project_dir, args.name, before_best)
+        if best_pt is None:
+            best_pt = find_best_weights_fallback(args.name, before_best)
         if best_pt is None:
             raise RuntimeError("Training completed but best.pt was not found for ONNX export.")
 
