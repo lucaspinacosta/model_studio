@@ -1,0 +1,15 @@
+# Core training/inference stack
+ultralytics==8.4.15
+torch==2.10.0
+torchvision==0.25.0
+
+# Computer vision + GUI
+opencv-python-headless==4.13.0.92
+PyQt5==5.15.11
+matplotlib==3.10.8
+
+# ONNX inference/export support
+onnxruntime==1.24.2
+
+# Numerical dependency used across the stack
+numpy==2.4.2
