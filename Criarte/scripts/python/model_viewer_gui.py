@@ -145,6 +145,7 @@ class ModelViewer(QMainWindow):
         self.train_plot_timer.timeout.connect(self._update_optimize_training_plot)
         self.train_results_csv: Path | None = None
         self.model_train_process: QProcess | None = None
+        self.model_export_process: QProcess | None = None
         self.model_train_plot_timer = QTimer(self)
         self.model_train_plot_timer.timeout.connect(self._update_model_training_plot)
         self.model_train_results_csv: Path | None = None
@@ -359,7 +360,8 @@ class ModelViewer(QMainWindow):
             "background-color: #122231; color: #dbe8f5; border-radius: 10px; border: 1px solid #203a54;"
         )
         self.image_label.setMinimumHeight(0)
-        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Prevent pixmap size hints from growing the scrollable tab content on each frame/image update.
+        self.image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         layout.addWidget(self.image_label, 1)
 
     def _build_optimize_tab(self) -> None:
@@ -907,6 +909,98 @@ class ModelViewer(QMainWindow):
         )
         self._update_plot_window(self.model_train_results_csv, self.model_plot_window)
 
+    def _select_training_python(self) -> str:
+        root = self._project_root()
+        rocm_py = root / ".venv-rocm" / "bin" / "python"
+        cuda_py = root / ".venv" / "bin" / "python"
+        platform_is_amd = self.train_platform_combo.currentText().startswith("AMD")
+        if platform_is_amd and rocm_py.exists():
+            return str(rocm_py)
+        if (not platform_is_amd) and cuda_py.exists():
+            return str(cuda_py)
+        if rocm_py.exists():
+            return str(rocm_py)
+        if cuda_py.exists():
+            return str(cuda_py)
+        return sys.executable
+
+    def _resolve_project_dir(self, project_value: str) -> Path:
+        project_dir = Path(project_value)
+        if not project_dir.is_absolute():
+            project_dir = self._project_root() / project_dir
+        return project_dir
+
+    def _find_best_weights(self, project_value: str, run_name: str) -> Path | None:
+        project_dir = self._resolve_project_dir(project_value)
+        expected = project_dir / run_name / "weights" / "best.pt"
+        if expected.exists():
+            return expected
+        if not project_dir.exists():
+            return None
+        candidates = list(project_dir.rglob("best.pt"))
+        if not candidates:
+            return None
+        run_name = run_name.lower().strip()
+        if run_name:
+            filtered = [p for p in candidates if run_name in str(p.parent.parent).lower()]
+            if filtered:
+                candidates = filtered
+        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return candidates[0]
+
+    def _start_model_export_onnx(self) -> None:
+        if self.model_export_process is not None and self.model_export_process.state() != QProcess.NotRunning:
+            return
+
+        project_value = self.obb_project_edit.text().strip() or "runs/obb"
+        run_name = self.obb_name_edit.text().strip() or "sandwich_panel_obb_gui"
+        best_pt = self._find_best_weights(project_value, run_name)
+        if best_pt is None:
+            self.model_training_log.append("\n[ONNX export skipped: best.pt not found]")
+            return
+
+        python_bin = self._select_training_python()
+        if not Path(python_bin).exists():
+            self.model_training_log.append(f"\n[ONNX export skipped: Python runtime not found: {python_bin}]")
+            return
+
+        export_code = (
+            "from ultralytics import YOLO; import sys; "
+            "out=YOLO(sys.argv[1]).export(format='onnx', imgsz=int(sys.argv[2]), opset=17, simplify=False); "
+            "print(out)"
+        )
+        args = ["-c", export_code, str(best_pt), str(self.obb_imgsz_spin.value())]
+        self.model_training_log.append(f"\n$ {python_bin} {' '.join(args)}")
+
+        self.model_export_process = QProcess(self)
+        self.model_export_process.setWorkingDirectory(str(self._project_root()))
+        self.model_export_process.setProgram(python_bin)
+        self.model_export_process.setArguments(args)
+        self.model_export_process.setProcessChannelMode(QProcess.MergedChannels)
+        self.model_export_process.readyReadStandardOutput.connect(self._on_model_export_output)
+        self.model_export_process.finished.connect(self._on_model_export_finished)
+        self.model_export_process.start()
+        self.statusBar().showMessage("Exporting ONNX from best.pt ...", 5000)
+
+    def _on_model_export_output(self) -> None:
+        if self.model_export_process is None:
+            return
+        text = bytes(self.model_export_process.readAllStandardOutput()).decode(errors="replace")
+        if text:
+            self.model_training_log.insertPlainText(text)
+            self.model_training_log.verticalScrollBar().setValue(
+                self.model_training_log.verticalScrollBar().maximum()
+            )
+
+    def _on_model_export_finished(self, exit_code: int, exit_status: int) -> None:
+        _ = exit_status
+        if exit_code == 0:
+            self.model_training_log.append("\n[ONNX export finished successfully]")
+            self.statusBar().showMessage("ONNX export finished", 5000)
+        else:
+            self.model_training_log.append(f"\n[ONNX export failed, exit code {exit_code}]")
+            self.statusBar().showMessage("ONNX export failed", 5000)
+
     def start_training_pipeline(self) -> None:
         if self.train_process is not None and self.train_process.state() != QProcess.NotRunning:
             QMessageBox.warning(self, "Training", "A training process is already running.")
@@ -1161,6 +1255,7 @@ class ModelViewer(QMainWindow):
         if exit_code == 0:
             self.model_training_log.append("\n[Model training finished successfully]")
             self.statusBar().showMessage("Model training finished", 5000)
+            self._start_model_export_onnx()
         else:
             self.model_training_log.append(f"\n[Model training failed, exit code {exit_code}]")
             self.statusBar().showMessage("Model training failed", 5000)
@@ -1415,6 +1510,8 @@ class ModelViewer(QMainWindow):
             self.train_process.kill()
         if self.model_train_process is not None and self.model_train_process.state() != QProcess.NotRunning:
             self.model_train_process.kill()
+        if self.model_export_process is not None and self.model_export_process.state() != QProcess.NotRunning:
+            self.model_export_process.kill()
         self.train_plot_timer.stop()
         self.model_train_plot_timer.stop()
         self._clear_video()

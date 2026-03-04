@@ -24,16 +24,14 @@ dist/
 .DS_Store
 Thumbs.db
 .vscode/
+.tmp/
+**cache
 
 *.mp4
 *.MP4
-*.JPG
-*.png
-*.jpg
-**/runs/
 */data
 */Backup/
 
 !*/*.onnx
 !*/*.pt
-!*/Backup/Data/Images/*
+!*/Backup/Data/*
