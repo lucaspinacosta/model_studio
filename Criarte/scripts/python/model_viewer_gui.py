@@ -26,8 +26,10 @@ try:
         QMainWindow,
         QMessageBox,
         QPushButton,
+        QScrollArea,
         QSlider,
         QSpinBox,
+        QSizePolicy,
         QTabWidget,
         QTextEdit,
         QVBoxLayout,
@@ -42,6 +44,7 @@ _qt_plugins = QLibraryInfo.location(QLibraryInfo.PluginsPath)
 if _qt_plugins:
     os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = _qt_plugins
     os.environ["QT_PLUGIN_PATH"] = _qt_plugins
+    os.environ["QT_QPA_PLATFORM"] = "wayland"  # or "xcb" on X11, "windows" on Windows, etc.
 
 import cv2
 try:
@@ -121,7 +124,7 @@ class FloatingTrainingPlotWindow(QWidget):
 class ModelViewer(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Model Image Viewer")
+        self.setWindowTitle("Criarte Model Studio")
         self.resize(1300, 850)
 
         self.model: YOLO | None = None
@@ -149,20 +152,129 @@ class ModelViewer(QMainWindow):
         self.model_plot_window: FloatingTrainingPlotWindow | None = None
         self.plot_windows: list[FloatingTrainingPlotWindow] = []
 
+        self._apply_professional_theme()
         self._build_ui()
         self._refresh_nav_buttons()
+
+    def _apply_professional_theme(self) -> None:
+        self.setStyleSheet(
+            """
+            QWidget {
+                background-color: #f4f7fa;
+                color: #1f2a37;
+                font-family: "Segoe UI", "Noto Sans", sans-serif;
+                font-size: 13px;
+            }
+            QMainWindow {
+                background-color: #e9eef4;
+            }
+            QWidget#headerCard {
+                background-color: #ffffff;
+                border: 1px solid #d7e1ea;
+                border-radius: 12px;
+            }
+            QLabel#headerTitle {
+                font-size: 20px;
+                font-weight: 700;
+                color: #10263e;
+            }
+            QLabel#headerSubtitle {
+                font-size: 12px;
+                color: #58708a;
+            }
+            QTabWidget::pane {
+                border: 1px solid #cfd8e3;
+                border-radius: 10px;
+                background: #ffffff;
+            }
+            QTabBar::tab {
+                background: #dde5ef;
+                color: #1f2a37;
+                padding: 8px 14px;
+                margin-right: 4px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                font-weight: 600;
+            }
+            QPushButton {
+                background-color: #dce7f3;
+                border: 1px solid #c2d0e0;
+                border-radius: 8px;
+                padding: 7px 12px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #cfdeef;
+            }
+            QPushButton#primaryButton {
+                background-color: #0a66c2;
+                border: 1px solid #0858a8;
+                color: #ffffff;
+            }
+            QPushButton#primaryButton:hover {
+                background-color: #0858a8;
+            }
+            QPushButton#dangerButton {
+                background-color: #d33f49;
+                border: 1px solid #b2313a;
+                color: #ffffff;
+            }
+            QPushButton#dangerButton:hover {
+                background-color: #b2313a;
+            }
+            QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit {
+                background-color: #ffffff;
+                border: 1px solid #c8d4e1;
+                border-radius: 8px;
+                padding: 6px;
+            }
+            QCheckBox {
+                spacing: 8px;
+            }
+            QSlider::groove:horizontal {
+                border-radius: 4px;
+                height: 6px;
+                background: #d0dbe7;
+            }
+            QSlider::handle:horizontal {
+                background: #0a66c2;
+                border: 1px solid #0858a8;
+                width: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            """
+        )
 
     def _build_ui(self) -> None:
         root = QWidget()
         self.setCentralWidget(root)
         main_layout = QVBoxLayout(root)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(12)
+
+        header = QWidget()
+        header.setObjectName("headerCard")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        header_layout.setSpacing(2)
+        header_title = QLabel("Criarte Model Studio")
+        header_title.setObjectName("headerTitle")
+        header_subtitle = QLabel("Inference, pseudo-label optimization, and OBB training")
+        header_subtitle.setObjectName("headerSubtitle")
+        header_layout.addWidget(header_title)
+        header_layout.addWidget(header_subtitle)
+        main_layout.addWidget(header)
 
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
 
-        self.inference_tab = QWidget()
-        self.optimize_tab = QWidget()
-        self.training_tab = QWidget()
+        self.inference_tab = self._create_scroll_tab()
+        self.optimize_tab = self._create_scroll_tab()
+        self.training_tab = self._create_scroll_tab()
         self.tabs.addTab(self.inference_tab, "Inference")
         self.tabs.addTab(self.optimize_tab, "Optimize")
         self.tabs.addTab(self.training_tab, "Training")
@@ -171,10 +283,32 @@ class ModelViewer(QMainWindow):
         self._build_optimize_tab()
         self._build_training_tab()
 
+    def _create_scroll_tab(self) -> QWidget:
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        content = QWidget()
+        scroll.setWidget(content)
+        container_layout.addWidget(scroll)
+
+        container._scroll_content = content  # type: ignore[attr-defined]
+        return container
+
+    @staticmethod
+    def _tab_content(tab_container: QWidget) -> QWidget:
+        return tab_container._scroll_content  # type: ignore[attr-defined]
+
     def _build_inference_tab(self) -> None:
-        layout = QVBoxLayout(self.inference_tab)
+        layout = QVBoxLayout(self._tab_content(self.inference_tab))
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
         controls = QHBoxLayout()
+        controls.setSpacing(8)
         layout.addLayout(controls)
 
         self.load_model_btn = QPushButton("Load Model")
@@ -202,7 +336,7 @@ class ModelViewer(QMainWindow):
         self.conf_slider.setValue(25)
         self.conf_slider.valueChanged.connect(self._on_confidence_changed)
         self.conf_slider.sliderReleased.connect(self._rerun_current)
-        controls.addWidget(QLabel("Accuracy"))
+        controls.addWidget(QLabel("Confidence"))
         controls.addWidget(self.conf_slider)
 
         self.conf_label = QLabel("25%")
@@ -221,12 +355,17 @@ class ModelViewer(QMainWindow):
 
         self.image_label = QLabel("Load an image folder or a video to begin")
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setStyleSheet("background-color: #111; color: #ddd;")
-        self.image_label.setMinimumHeight(500)
+        self.image_label.setStyleSheet(
+            "background-color: #122231; color: #dbe8f5; border-radius: 10px; border: 1px solid #203a54;"
+        )
+        self.image_label.setMinimumHeight(0)
+        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.image_label, 1)
 
     def _build_optimize_tab(self) -> None:
-        layout = QVBoxLayout(self.optimize_tab)
+        layout = QVBoxLayout(self._tab_content(self.optimize_tab))
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
         self.optimize_mode_tabs = QTabWidget()
         layout.addWidget(self.optimize_mode_tabs)
         self.optimize_amd_tab = QWidget()
@@ -368,10 +507,12 @@ class ModelViewer(QMainWindow):
 
         actions = QHBoxLayout()
         self.start_train_btn = QPushButton("Start Pseudo-Label + Train")
+        self.start_train_btn.setObjectName("primaryButton")
         self.start_train_btn.clicked.connect(self.start_training_pipeline)
         actions.addWidget(self.start_train_btn)
 
         self.stop_train_btn = QPushButton("Stop")
+        self.stop_train_btn.setObjectName("dangerButton")
         self.stop_train_btn.setEnabled(False)
         self.stop_train_btn.clicked.connect(self.stop_training_pipeline)
         actions.addWidget(self.stop_train_btn)
@@ -381,12 +522,15 @@ class ModelViewer(QMainWindow):
 
         self.training_log = QTextEdit()
         self.training_log.setReadOnly(True)
-        self.training_log.setMinimumHeight(180)
+        self.training_log.setMinimumHeight(0)
+        self.training_log.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.training_log, 1)
         self._on_optimize_mode_changed(self.optimize_mode_tabs.currentIndex())
 
     def _build_training_tab(self) -> None:
-        layout = QVBoxLayout(self.training_tab)
+        layout = QVBoxLayout(self._tab_content(self.training_tab))
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
         form = QFormLayout()
         layout.addLayout(form)
 
@@ -454,10 +598,12 @@ class ModelViewer(QMainWindow):
 
         actions = QHBoxLayout()
         self.start_model_train_btn = QPushButton("Start OBB Training")
+        self.start_model_train_btn.setObjectName("primaryButton")
         self.start_model_train_btn.clicked.connect(self.start_model_training)
         actions.addWidget(self.start_model_train_btn)
 
         self.stop_model_train_btn = QPushButton("Stop")
+        self.stop_model_train_btn.setObjectName("dangerButton")
         self.stop_model_train_btn.setEnabled(False)
         self.stop_model_train_btn.clicked.connect(self.stop_model_training)
         actions.addWidget(self.stop_model_train_btn)
@@ -465,7 +611,8 @@ class ModelViewer(QMainWindow):
 
         self.model_training_log = QTextEdit()
         self.model_training_log.setReadOnly(True)
-        self.model_training_log.setMinimumHeight(220)
+        self.model_training_log.setMinimumHeight(0)
+        self.model_training_log.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.model_training_log, 1)
 
     def _add_file_selector_row(
@@ -646,13 +793,16 @@ class ModelViewer(QMainWindow):
             self.statusBar().showMessage("Optimize preset applied: CPU Stable", 3000)
 
     def _extract_results_csv_from_output(self, text: str) -> Path | None:
+        markers = ("Logging results to", "Results saved to", "Saving to")
         for raw_line in text.splitlines():
             line = self._strip_ansi(raw_line)
-            marker = "Logging results to"
-            if marker in line:
-                run_dir_str = line.split(marker, 1)[1].strip()
-                if run_dir_str:
-                    run_dir = Path(run_dir_str)
+            for marker in markers:
+                if marker in line:
+                    run_dir_str = line.split(marker, 1)[1].strip().strip('"').strip("'")
+                    run_dir = Path(run_dir_str.rstrip("/"))
+                    # Ultralytics usually logs the run directory. Be tolerant if file path is printed.
+                    if run_dir.name == "results.csv":
+                        return run_dir
                     return run_dir / "results.csv"
         return None
 
@@ -666,8 +816,8 @@ class ModelViewer(QMainWindow):
         run_name = run_name.lower()
         candidates = []
         for path in project_dir.rglob("results.csv"):
-            parent_name = path.parent.name.lower()
-            if run_name in parent_name:
+            parent_path = str(path.parent).lower()
+            if run_name in parent_path:
                 candidates.append(path)
         if not candidates:
             candidates = list(project_dir.rglob("results.csv"))
@@ -675,6 +825,19 @@ class ModelViewer(QMainWindow):
             return None
         candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return candidates[0]
+
+    def _refresh_results_csv_path(self, current_path: Path | None, project_value: str, run_name: str) -> Path | None:
+        newest = self._fallback_find_results_csv(project_value, run_name)
+        if newest is None:
+            return current_path
+        if current_path is None:
+            return newest
+        try:
+            current_mtime = current_path.stat().st_mtime if current_path.exists() else -1
+            newest_mtime = newest.stat().st_mtime
+        except Exception:
+            return newest
+        return newest if newest_mtime >= current_mtime else current_path
 
     def _create_plot_window(self, title: str) -> FloatingTrainingPlotWindow | None:
         if not HAS_MATPLOTLIB:
@@ -700,8 +863,9 @@ class ModelViewer(QMainWindow):
             return
 
         x = list(range(1, len(rows) + 1))
-        loss_keys = ["train/box_loss", "train/cls_loss", "train/dfl_loss"]
-        metric_keys = ["metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"]
+        row0 = rows[0]
+        loss_keys = [k for k in row0 if k.startswith("train/") and k.endswith("_loss")]
+        metric_keys = [k for k in row0 if k.startswith("metrics/")]
 
         plot_window.clear_plot()
         loss_ax = plot_window.loss_ax
@@ -728,19 +892,19 @@ class ModelViewer(QMainWindow):
         plot_window.canvas.draw_idle()
 
     def _update_optimize_training_plot(self) -> None:
-        if self.train_results_csv is None or not self.train_results_csv.exists():
-            self.train_results_csv = self._fallback_find_results_csv(
-                self.project_edit.text().strip() or "runs/train",
-                self.run_name_edit.text().strip() or "pseudo_label_train",
-            )
+        self.train_results_csv = self._refresh_results_csv_path(
+            self.train_results_csv,
+            self.project_edit.text().strip() or "runs/train",
+            self.run_name_edit.text().strip() or "pseudo_label_train",
+        )
         self._update_plot_window(self.train_results_csv, self.optimize_plot_window)
 
     def _update_model_training_plot(self) -> None:
-        if self.model_train_results_csv is None or not self.model_train_results_csv.exists():
-            self.model_train_results_csv = self._fallback_find_results_csv(
-                self.obb_project_edit.text().strip() or "runs/obb",
-                self.obb_name_edit.text().strip() or "sandwich_panel_obb_gui",
-            )
+        self.model_train_results_csv = self._refresh_results_csv_path(
+            self.model_train_results_csv,
+            self.obb_project_edit.text().strip() or "runs/obb",
+            self.obb_name_edit.text().strip() or "sandwich_panel_obb_gui",
+        )
         self._update_plot_window(self.model_train_results_csv, self.model_plot_window)
 
     def start_training_pipeline(self) -> None:
