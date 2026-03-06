@@ -47,6 +47,24 @@ python -m pip install -r requirements.nvidia.txt
 
 Use `.venv/bin/python` on NVIDIA if needed.
 
+## Build AppImage
+
+1. Install build prerequisites in your active environment:
+
+```bash
+python -m pip install pyinstaller
+```
+
+2. Install `appimagetool` on your system, or place `appimagetool-*.AppImage` in `tools/`.
+
+3. Build the AppImage:
+
+```bash
+./scripts/bash/build_appimage.sh .venv-rocm/bin/python
+```
+
+Output will be generated in `dist/` as `ModelStudio-<version>-<arch>.AppImage`.
+
 ## GUI Tabs
 
 ### Inference
