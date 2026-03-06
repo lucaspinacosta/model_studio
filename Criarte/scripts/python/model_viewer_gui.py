@@ -329,97 +329,132 @@ class ModelViewer(QMainWindow):
 
         self._apply_professional_theme()
         self._build_ui()
+        self._apply_argument_tooltips()
         self._refresh_nav_buttons()
 
     def _apply_professional_theme(self) -> None:
         self.setStyleSheet(
             """
             QWidget {
-                background-color: #f4f7fa;
-                color: #1f2a37;
+                background-color: #323232;
+                color: #EEEEEE;
                 font-family: "Segoe UI", "Noto Sans", sans-serif;
                 font-size: 13px;
             }
             QMainWindow {
-                background-color: #e9eef4;
+                background-color: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #323232,
+                    stop: 1 #323232
+                );
+            }
+            QScrollArea {
+                background: transparent;
+            }
+            QScrollArea > QWidget > QWidget {
+                background: transparent;
             }
             QWidget#headerCard {
-                background-color: #ffffff;
-                border: 1px solid #d7e1ea;
-                border-radius: 12px;
+                background-color: rgba(50, 50, 50, 215);
+                border: 1px solid #CF0A0A;
+                border-radius: 18px;
             }
             QLabel#headerTitle {
                 font-size: 20px;
                 font-weight: 700;
-                color: #10263e;
+                color: #EEEEEE;
             }
             QLabel#headerSubtitle {
                 font-size: 12px;
-                color: #58708a;
+                color: #DC5F00;
             }
             QTabWidget::pane {
-                border: 1px solid #cfd8e3;
-                border-radius: 10px;
-                background: #ffffff;
+                border: 1px solid #CF0A0A;
+                border-radius: 14px;
+                background: rgba(50, 50, 50, 220);
+                top: -1px;
             }
             QTabBar::tab {
-                background: #dde5ef;
-                color: #1f2a37;
-                padding: 8px 14px;
+                background: rgba(50, 50, 50, 200);
+                color: #EEEEEE;
+                padding: 9px 16px;
                 margin-right: 4px;
-                border-top-left-radius: 8px;
-                border-top-right-radius: 8px;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                border: 1px solid #DC5F00;
             }
             QTabBar::tab:selected {
-                background: #ffffff;
+                background: #CF0A0A;
+                color: #EEEEEE;
                 font-weight: 600;
             }
             QPushButton {
-                background-color: #dce7f3;
-                border: 1px solid #c2d0e0;
-                border-radius: 8px;
-                padding: 7px 12px;
+                background-color: rgba(50, 50, 50, 210);
+                border: 1px solid #DC5F00;
+                border-radius: 11px;
+                padding: 8px 12px;
                 font-weight: 600;
+                color: #EEEEEE;
             }
             QPushButton:hover {
-                background-color: #cfdeef;
+                background-color: #DC5F00;
+                color: #323232;
             }
             QPushButton#primaryButton {
-                background-color: #0a66c2;
-                border: 1px solid #0858a8;
-                color: #ffffff;
+                background-color: #CF0A0A;
+                border: 1px solid #DC5F00;
+                color: #EEEEEE;
             }
             QPushButton#primaryButton:hover {
-                background-color: #0858a8;
+                background-color: #DC5F00;
+                color: #323232;
             }
             QPushButton#dangerButton {
-                background-color: #d33f49;
-                border: 1px solid #b2313a;
-                color: #ffffff;
+                background-color: #CF0A0A;
+                border: 1px solid #DC5F00;
+                color: #EEEEEE;
             }
             QPushButton#dangerButton:hover {
-                background-color: #b2313a;
+                background-color: #DC5F00;
+                color: #323232;
             }
             QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit {
-                background-color: #ffffff;
-                border: 1px solid #c8d4e1;
-                border-radius: 8px;
+                background-color: rgba(50, 50, 50, 220);
+                border: 1px solid #DC5F00;
+                border-radius: 10px;
                 padding: 6px;
+                color: #EEEEEE;
+            }
+            QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QTextEdit:focus {
+                border: 1px solid #CF0A0A;
             }
             QCheckBox {
                 spacing: 8px;
+                color: #EEEEEE;
             }
             QSlider::groove:horizontal {
-                border-radius: 4px;
+                border-radius: 5px;
                 height: 6px;
-                background: #d0dbe7;
+                background: #323232;
+                border: 1px solid #DC5F00;
             }
             QSlider::handle:horizontal {
-                background: #0a66c2;
-                border: 1px solid #0858a8;
-                width: 14px;
+                background: #CF0A0A;
+                border: 1px solid #DC5F00;
+                width: 15px;
                 margin: -5px 0;
-                border-radius: 7px;
+                border-radius: 8px;
+            }
+            QScrollBar:vertical {
+                background: #323232;
+                width: 12px;
+                margin: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background: #CF0A0A;
+                border: 1px solid #DC5F00;
+                border-radius: 6px;
+                min-height: 24px;
             }
             """
         )
@@ -438,10 +473,12 @@ class ModelViewer(QMainWindow):
         header_layout.setSpacing(2)
         header_title = QLabel("Criarte Model Studio")
         header_title.setObjectName("headerTitle")
+        header_title.setAlignment(Qt.AlignCenter)
         header_subtitle = QLabel("Inference, pseudo-label optimization, and OBB training")
         header_subtitle.setObjectName("headerSubtitle")
-        header_layout.addWidget(header_title)
-        header_layout.addWidget(header_subtitle)
+        header_subtitle.setAlignment(Qt.AlignCenter)
+        header_layout.addWidget(header_title, alignment=Qt.AlignHCenter)
+        header_layout.addWidget(header_subtitle, alignment=Qt.AlignHCenter)
         main_layout.addWidget(header)
 
         self.tabs = QTabWidget()
@@ -537,7 +574,10 @@ class ModelViewer(QMainWindow):
         self.image_label = QLabel("Load an image folder or a video to begin")
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setStyleSheet(
-            "background-color: #122231; color: #dbe8f5; border-radius: 10px; border: 1px solid #203a54;"
+            "background-color: rgba(50, 50, 50, 220); "
+            "color: #EEEEEE; "
+            "border-radius: 14px; "
+            "border: 1px solid #CF0A0A;"
         )
         self.image_label.setMinimumHeight(0)
         # Prevent pixmap size hints from growing the scrollable tab content on each frame/image update.
@@ -1212,6 +1252,92 @@ class ModelViewer(QMainWindow):
         dir_name = QFileDialog.getExistingDirectory(self, caption)
         if dir_name:
             edit.setText(dir_name)
+
+    def _apply_argument_tooltips(self) -> None:
+        # Inference
+        self.load_model_btn.setToolTip("Load a model file used for inference.")
+        self.load_folder_btn.setToolTip("Load a folder of images for sequential inference.")
+        self.load_video_btn.setToolTip("Load a video file for frame-by-frame inference.")
+        self.prev_btn.setToolTip("Go to previous image/frame.")
+        self.next_btn.setToolTip("Go to next image/frame.")
+        self.conf_slider.setToolTip("Confidence threshold for predictions (0-100%).")
+
+        # Labeling
+        self.label_load_folder_btn.setToolTip("Load images to annotate with polygons.")
+        self.label_class_combo.setToolTip("Current class ID used for new polygons.")
+        self.label_new_class_edit.setToolTip("Type a new class name, then click Add Class.")
+        self.label_add_class_btn.setToolTip("Add the typed class name to the class list.")
+        self.label_finish_poly_btn.setToolTip("Close current polygon (minimum 3 points).")
+        self.label_undo_point_btn.setToolTip("Remove the last point from current polygon.")
+        self.label_undo_poly_btn.setToolTip("Delete the most recently created polygon.")
+        self.label_clear_poly_btn.setToolTip("Clear all points from current polygon.")
+        self.label_train_pct.setToolTip("Percentage of labeled images exported to train split.")
+        self.label_test_pct.setToolTip("Percentage of labeled images exported to test split.")
+        self.label_valid_pct.setToolTip("Percentage of labeled images exported to validation split.")
+        self.label_export_dir.setToolTip("Output folder for exported dataset (images, labels, data.yaml).")
+        self.label_export_btn.setToolTip("Export labeled polygons as YOLO-seg dataset files.")
+
+        # Optimize tab platform controls
+        self.optimize_preset_amd_btn.setToolTip("Apply conservative AMD defaults for stability.")
+        self.optimize_preset_nvidia_btn.setToolTip("Apply faster NVIDIA defaults.")
+        self.optimize_preset_cpu_btn.setToolTip("Apply CPU-safe defaults.")
+        self.optimize_amd_hsa_edit.setToolTip("AMD only: HSA_OVERRIDE_GFX_VERSION passed to training.")
+        self.optimize_amd_amp_check.setToolTip("AMD only: enable mixed precision (faster, may be unstable).")
+        self.optimize_amd_val_check.setToolTip("AMD only: run validation during training.")
+        self.optimize_nvidia_amp_check.setToolTip("NVIDIA only: enable mixed precision training.")
+        self.optimize_nvidia_val_check.setToolTip("NVIDIA only: run validation during training.")
+        self.optimize_cpu_amp_check.setToolTip("CPU only: enable mixed precision (usually keep disabled).")
+        self.optimize_cpu_val_check.setToolTip("CPU only: run validation during training.")
+
+        # Optimize tab arguments (pseudo_label_and_train.py)
+        self.teacher_model_edit.setToolTip("--teacher-model: model used to generate pseudo labels.")
+        self.images_dir_edit.setToolTip("--images-dir: unlabeled source images directory.")
+        self.output_dir_edit.setToolTip("--output-dir: destination dataset directory for pseudo labels.")
+        self.conf_train_spin.setToolTip("--conf: minimum confidence for pseudo-label detections.")
+        self.imgsz_train_spin.setToolTip("--imgsz: image size for pseudo-label inference and training.")
+        self.device_train_edit.setToolTip("--device: training/inference device (cpu, 0, 0,1...).")
+        self.val_ratio_spin.setToolTip("--val-ratio: validation split ratio for generated dataset.")
+        self.seed_spin.setToolTip("--seed: random seed used for data split reproducibility.")
+        self.max_images_spin.setToolTip("--max-images: limit number of unlabeled images (0 means all).")
+        self.train_model_edit.setToolTip("--train-model: base trainable model/config (.pt/.yaml/.yml).")
+        self.epochs_spin.setToolTip("--epochs: number of training epochs.")
+        self.batch_spin.setToolTip("--batch: batch size for training.")
+        self.workers_spin.setToolTip("--workers: dataloader worker processes.")
+        self.project_edit.setToolTip("--project: output project directory for training runs.")
+        self.run_name_edit.setToolTip("--name: run name subfolder inside project directory.")
+        self.skip_train_check.setToolTip("--skip-train: only create pseudo labels, skip model training.")
+        self.export_onnx_name_edit.setToolTip("--export-onnx-name: output ONNX filename after training.")
+        self.export_onnx_imgsz_spin.setToolTip("--export-onnx-imgsz: ONNX export image size (0 uses --imgsz).")
+        self.start_train_btn.setToolTip("Start pseudo-label generation and optional training pipeline.")
+        self.stop_train_btn.setToolTip("Stop current pseudo-label/training process.")
+
+        # Training tab arguments
+        self.train_platform_combo.setToolTip("Choose runtime stack for training: AMD ROCm or NVIDIA CUDA.")
+        self.train_task_combo.setToolTip("YOLO task for training command (detect or obb).")
+        self.obb_data_edit.setToolTip("--data: dataset YAML path.")
+        self.obb_model_edit.setToolTip("--model: trainable model/config (.pt/.yaml/.yml).")
+        self.obb_epochs_spin.setToolTip("--epochs: number of training epochs.")
+        self.obb_imgsz_spin.setToolTip("--imgsz: image size used for training.")
+        self.obb_batch_spin.setToolTip("--batch: batch size for training.")
+        self.obb_device_edit.setToolTip("--device: training device (cpu, 0, 0,1...).")
+        self.obb_workers_spin.setToolTip("--workers: dataloader worker processes.")
+        self.obb_project_edit.setToolTip("--project: output project directory for run artifacts.")
+        self.obb_name_edit.setToolTip("--name: run name subfolder.")
+        self.obb_amp_check.setToolTip("--amp: enable automatic mixed precision.")
+        self.obb_val_check.setToolTip("--val: run validation during training.")
+        self.obb_hsa_edit.setToolTip("--hsa-gfx: AMD HSA override value for ROCm environment.")
+        self.start_model_train_btn.setToolTip("Start the selected training task.")
+        self.stop_model_train_btn.setToolTip("Stop current training process.")
+
+        # Converter tab arguments
+        self.converter_input_edit.setToolTip("Input .pt model path to convert.")
+        self.converter_output_edit.setToolTip("Output .onnx file path.")
+        self.converter_task_combo.setToolTip("Task used to load/export model metadata.")
+        self.converter_imgsz_spin.setToolTip("imgsz used during export (0 keeps model default).")
+        self.converter_opset_spin.setToolTip("ONNX opset version used for export.")
+        self.converter_runtime_combo.setToolTip("Python/runtime environment used for conversion.")
+        self.start_converter_btn.setToolTip("Run .pt to .onnx conversion.")
+        self.stop_converter_btn.setToolTip("Stop current conversion process.")
 
     def _project_root(self) -> Path:
         return Path(__file__).resolve().parents[2]
