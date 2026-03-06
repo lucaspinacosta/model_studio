@@ -3,8 +3,26 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+find_default_data_yaml() {
+  local candidates=(
+    "${ROOT_DIR}/data/SandwichPanel.v8i.yolov8-obb/data.yaml"
+    "${ROOT_DIR}/data/SandwichPanel.v7i.yolov8-obb/data.yaml"
+    "${ROOT_DIR}/Backup/Data/SandwichPanel.v8i.yolov8-obb/data.yaml"
+    "${ROOT_DIR}/Backup/Data/SandwichPanel.v7i.yolov8-obb/data.yaml"
+  )
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "${candidate}" ]]; then
+      echo "${candidate}"
+      return
+    fi
+  done
+  # Keep a sensible default even when no candidate exists.
+  echo "${ROOT_DIR}/Backup/Data/SandwichPanel.v8i.yolov8-obb/data.yaml"
+}
+
 # Defaults
-DATA_YAML="${ROOT_DIR}/data/SandwichPanel.v8i.yolov8-obb/data.yaml"
+DATA_YAML="$(find_default_data_yaml)"
 MODEL="yolo11n-obb.pt"
 EPOCHS=100
 IMGSZ=640

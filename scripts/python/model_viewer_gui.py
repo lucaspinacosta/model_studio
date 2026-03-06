@@ -1048,7 +1048,7 @@ class ModelViewer(QMainWindow):
         self.train_task_combo.addItems(["obb", "detect"])
         form.addRow("Task", self.train_task_combo)
 
-        self.obb_data_edit = QLineEdit("data/SandwichPanel.v7i.yolov8-obb/data.yaml")
+        self.obb_data_edit = QLineEdit(self._default_dataset_yaml("obb"))
         self._add_file_selector_row(
             form,
             "Dataset YAML (--data)",
@@ -1340,7 +1340,71 @@ class ModelViewer(QMainWindow):
         self.stop_converter_btn.setToolTip("Stop current conversion process.")
 
     def _project_root(self) -> Path:
-        return Path(__file__).resolve().parents[2]
+        here = Path(__file__).resolve()
+        for candidate in [here.parent, *here.parents]:
+            if (candidate / ".git").exists():
+                return candidate
+        return here.parents[2]
+
+    def _resolve_path(self, path_text: str) -> Path:
+        p = Path(path_text).expanduser()
+        if p.is_absolute():
+            return p
+        return self._project_root() / p
+
+    def _resolve_existing_path(self, path_text: str) -> Path | None:
+        p = Path(path_text).expanduser()
+        candidates = [p] if p.is_absolute() else [p, self._project_root() / p]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _default_dataset_yaml(self, task: str) -> str:
+        root = self._project_root()
+        task = (task or "").strip().lower()
+        if task == "detect":
+            candidates = [
+                root / "data" / "SandwichPanel.v9i.yolov8" / "data.yaml",
+                root / "Backup" / "Data" / "SandwichPanel.v9i.yolov8" / "data.yaml",
+            ]
+            patterns = ("*yolov8*/data.yaml", "*detect*/data.yaml")
+        else:
+            candidates = [
+                root / "data" / "SandwichPanel.v8i.yolov8-obb" / "data.yaml",
+                root / "data" / "SandwichPanel.v7i.yolov8-obb" / "data.yaml",
+                root / "Backup" / "Data" / "SandwichPanel.v8i.yolov8-obb" / "data.yaml",
+                root / "Backup" / "Data" / "SandwichPanel.v7i.yolov8-obb" / "data.yaml",
+            ]
+            patterns = ("*obb*/data.yaml",)
+
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+
+        search_roots = [root / "data", root / "Backup" / "Data", root]
+        for base in search_roots:
+            if not base.exists():
+                continue
+            for pattern in patterns:
+                found = sorted(base.glob(f"**/{pattern}"))
+                for path in found:
+                    if path.is_file():
+                        if task == "detect" and "obb" in str(path).lower():
+                            continue
+                        return str(path)
+
+        for base in search_roots:
+            if not base.exists():
+                continue
+            fallback = sorted(base.glob("**/data.yaml"))
+            for path in fallback:
+                if path.is_file():
+                    if task == "detect" and "obb" in str(path).lower():
+                        continue
+                    return str(path)
+
+        return str(candidates[0])
 
     @staticmethod
     def _is_trainable_model_file(path_text: str) -> bool:
@@ -1376,14 +1440,39 @@ class ModelViewer(QMainWindow):
             task = "obb"
         self.start_model_train_btn.setText(f"Start {task.upper()} Training")
 
+        obb_default = self._default_dataset_yaml("obb")
+        detect_default = self._default_dataset_yaml("detect")
+        current_data = self.obb_data_edit.text().strip()
+        current_data_exists = self._resolve_existing_path(current_data) is not None
+
+        legacy_obb_defaults = {
+            "data/SandwichPanel.v7i.yolov8-obb/data.yaml",
+            "data/SandwichPanel.v8i.yolov8-obb/data.yaml",
+        }
+        legacy_detect_defaults = {
+            "data/SandwichPanel.v9i.yolov8/data.yaml",
+        }
+
         project_text = self.obb_project_edit.text().strip()
         model_text = self.obb_model_edit.text().strip()
         if task == "detect":
+            if (
+                current_data in legacy_obb_defaults
+                or current_data == obb_default
+                or (current_data and not current_data_exists)
+            ):
+                self.obb_data_edit.setText(detect_default)
             if project_text == "runs/obb":
                 self.obb_project_edit.setText("runs/detect")
             if model_text == "yolo11n-obb.pt":
                 self.obb_model_edit.setText("yolo11n.pt")
         else:
+            if (
+                current_data in legacy_detect_defaults
+                or current_data == detect_default
+                or (current_data and not current_data_exists)
+            ):
+                self.obb_data_edit.setText(obb_default)
             if project_text == "runs/detect":
                 self.obb_project_edit.setText("runs/obb")
             if model_text == "yolo11n.pt":
@@ -1755,14 +1844,23 @@ class ModelViewer(QMainWindow):
         if Path(src).suffix.lower() != ".pt":
             QMessageBox.warning(self, "Invalid Input", "Input model must be a .pt file.")
             return
-        if not Path(src).exists():
+        src_path = self._resolve_existing_path(src)
+        if src_path is None:
             QMessageBox.warning(self, "Missing Input", f"Input model not found:\n{src}")
             return
         if not dst:
-            dst = str(Path(src).with_suffix(".onnx"))
+            dst = str(src_path.with_suffix(".onnx"))
             self.converter_output_edit.setText(dst)
         if Path(dst).suffix.lower() != ".onnx":
             QMessageBox.warning(self, "Invalid Output", "Output path must end with .onnx.")
+            return
+        dst_path = self._resolve_path(dst)
+        if not dst_path.parent.exists():
+            QMessageBox.warning(
+                self,
+                "Missing Output Folder",
+                "Output folder does not exist. Please choose an existing folder.",
+            )
             return
 
         python_bin = self._select_converter_python()
@@ -1774,20 +1872,20 @@ class ModelViewer(QMainWindow):
             return
 
         export_code = (
-            "from pathlib import Path; import shutil, sys; from ultralytics import YOLO; "
+            "from pathlib import Path; import sys; from ultralytics import YOLO; "
             "src=Path(sys.argv[1]); dst=Path(sys.argv[2]); imgsz=int(sys.argv[3]); "
             "task=sys.argv[4]; opset=int(sys.argv[5]); "
             "model=YOLO(str(src), task=task); "
             "kwargs={'format':'onnx', 'opset':opset, 'simplify':False, **({'imgsz': imgsz} if imgsz>0 else {})}; "
-            "out=Path(model.export(**kwargs)); dst.parent.mkdir(parents=True, exist_ok=True); "
-            "_=shutil.copy2(out, dst) if out.resolve()!=dst.resolve() else None; "
+            "out=Path(model.export(**kwargs)); "
+            "_=out.replace(dst) if out.resolve()!=dst.resolve() else None; "
             "print(dst)"
         )
         args = [
             "-c",
             export_code,
-            src,
-            dst,
+            str(src_path),
+            str(dst_path),
             str(self.converter_imgsz_spin.value()),
             self.converter_task_combo.currentText(),
             str(self.converter_opset_spin.value()),
@@ -1855,6 +1953,16 @@ class ModelViewer(QMainWindow):
             QMessageBox.warning(self, "Missing Input", "Please set --output-dir.")
             return
 
+        teacher_model_path = self._resolve_existing_path(teacher_model)
+        if teacher_model_path is None:
+            QMessageBox.warning(self, "Missing Input", f"Teacher model not found:\n{teacher_model}")
+            return
+        images_dir_path = self._resolve_existing_path(images_dir)
+        if images_dir_path is None or not images_dir_path.is_dir():
+            QMessageBox.warning(self, "Missing Input", f"Images directory not found:\n{images_dir}")
+            return
+        output_dir_path = self._resolve_path(output_dir)
+
         mode = self._current_optimize_mode()
         python_bin = self._select_optimize_python(mode)
         if not self._validate_optimize_runtime(mode, python_bin):
@@ -1864,11 +1972,11 @@ class ModelViewer(QMainWindow):
         args = [
             str(script_path),
             "--teacher-model",
-            teacher_model,
+            str(teacher_model_path),
             "--images-dir",
-            images_dir,
+            str(images_dir_path),
             "--output-dir",
-            output_dir,
+            str(output_dir_path),
             "--conf",
             str(self.conf_train_spin.value()),
             "--imgsz",
@@ -1905,7 +2013,8 @@ class ModelViewer(QMainWindow):
                     "ONNX models are inference-only and cannot be trained.",
                 )
                 return
-            args.extend(["--train-model", train_model])
+            train_model_path = self._resolve_existing_path(train_model)
+            args.extend(["--train-model", str(train_model_path) if train_model_path is not None else train_model])
 
         if self.skip_train_check.isChecked():
             args.append("--skip-train")
@@ -1988,6 +2097,14 @@ class ModelViewer(QMainWindow):
         if not data_yaml:
             QMessageBox.warning(self, "Missing Input", "Please choose --data yaml.")
             return
+        data_yaml_path = self._resolve_existing_path(data_yaml)
+        if data_yaml_path is None:
+            QMessageBox.warning(self, "Missing Input", f"Dataset yaml not found:\n{data_yaml}")
+            return
+        data_yaml = str(data_yaml_path)
+        model_path = self._resolve_existing_path(model)
+        if model_path is not None:
+            model = str(model_path)
 
         root = self._project_root()
         platform_is_amd = self.train_platform_combo.currentText().startswith("AMD")
