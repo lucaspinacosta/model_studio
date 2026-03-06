@@ -1,4 +1,4 @@
-# Criarte YOLO Workflow
+# YOLO Workflow
 
 This repository supports two training flows:
 
@@ -152,11 +152,10 @@ TScript only, no GUI:
     - `--train-val true|false`
 - `Training`: direct OBB training with platform selector (`AMD (ROCm)` / `NVIDIA (CUDA)`).
 
-
 # OBS
 
 This software still under validation and development.
 
-Attention to the hardcoded path. This is for a expecific project but still valid and flexible for other models. 
+Attention to the hardcoded path. This is for a expecific project but still valid and flexible for other models.
 
 ##### The use of GUI is strongly recomended!

@@ -46,7 +46,7 @@ _qt_plugins = QLibraryInfo.location(QLibraryInfo.PluginsPath)
 if _qt_plugins:
     os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = _qt_plugins
     os.environ["QT_PLUGIN_PATH"] = _qt_plugins
-    os.environ["QT_QPA_PLATFORM"] = "wayland"  # or "xcb" on X11, "windows" on Windows, etc.
+    # os.environ["QT_QPA_PLATFORM"] = "wayland"  # or "xcb" on X11, "windows" on Windows, etc.
 
 import cv2
 try:
