@@ -293,7 +293,7 @@ class PolygonAnnotationCanvas(QWidget):
 class ModelViewer(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Criarte Model Studio")
+        self.setWindowTitle("Model Studio")
         self.resize(1300, 850)
 
         self.model: YOLO | None = None
@@ -471,10 +471,10 @@ class ModelViewer(QMainWindow):
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 12)
         header_layout.setSpacing(2)
-        header_title = QLabel("Criarte Model Studio")
+        header_title = QLabel("Model Studio")
         header_title.setObjectName("headerTitle")
         header_title.setAlignment(Qt.AlignCenter)
-        header_subtitle = QLabel("Inference, pseudo-label optimization, and OBB training")
+        header_subtitle = QLabel("Inference, labeling, optimization, and training")
         header_subtitle.setObjectName("headerSubtitle")
         header_subtitle.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(header_title, alignment=Qt.AlignHCenter)

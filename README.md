@@ -1,4 +1,4 @@
-# Criarte Models Workflow
+# Model Studio Workflow
 
 This repository contains a YOLO workflow with:
 
