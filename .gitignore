@@ -30,8 +30,10 @@ Thumbs.db
 *.mp4
 *.MP4
 */data
-*/Backup/
+Backup/*
+runs/**
 
+!Backup/.gitkeep
+!**/.gitkeep
 !*/*.onnx
 !*/*.pt
-!*/Backup/Data/*
